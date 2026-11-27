@@ -2,33 +2,25 @@
 
 Painel (plugin UXP) para o Adobe Premiere Pro: biblioteca de músicas e efeitos sonoros com categorias, e clique para colocar direto na timeline.
 
-## Status: Fase 0 (prova de conceito)
+## Status: Fase 1 (biblioteca no painel)
 
-Um painel de teste que:
-1. deixa você escolher um arquivo de áudio;
-2. importa esse arquivo no projeto (se ainda não estiver);
-3. coloca na timeline, na posição do playhead, na faixa escolhida.
+- **Fase 0 ✅** — testado no Mac: importa e coloca o áudio no playhead. Índices de faixa começam em 0 (A1 = 0).
+- **Fase 1** — o painel agora:
+  1. pede a pasta da biblioteca (ex.: "Sounds fx" no Google Drive) e tenta lembrar dela nas próximas aberturas;
+  2. lista todos os sons (.wav, .mp3, .aif, .m4a…), ignorando `.DS_Store` e arquivos de cache do Premiere (`.cfa`, `.pek`);
+  3. cria uma aba por subpasta (categoria) e a aba **⭐ Favoritos** para pastas com "Preferidos"/"Favoritos" no nome;
+  4. tem busca por nome;
+  5. **clique no som → vai para a timeline no playhead**, na faixa escolhida (A1…A8, padrão A3), sobrescrevendo ou empurrando clipes.
 
-O objetivo é confirmar que a API do Premiere faz isso de forma confiável no **Mac e no Windows** antes de construir o resto.
+### Requisito: Google Drive
+O plugin lê os arquivos do disco. No Google Drive para computador, marque a pasta da biblioteca como **"Disponível off-line"**.
 
 ## Como testar
 
-1. Instale a **UXP Developer Tool** pelo app Creative Cloud.
-2. Abra o Premiere com um projeto e uma sequência aberta na timeline.
-3. Na UXP Developer Tool: **Add Plugin** → selecione o arquivo `plugin/manifest.json`.
-4. Clique em **Load** (ou nos "..." → Load). O painel deve aparecer no Premiere (se não aparecer, procure no menu **Window / Janela → UXP Plugins**, ou similar).
-5. No painel:
-   - **1. Escolher arquivo de áudio**
-   - Deixe as faixas como estão (áudio 2, vídeo 0) para o primeiro teste
-   - Clique em **2a. Inserir no playhead (sobrescrever)**
-6. Veja em qual faixa o áudio entrou. Os índices de faixa podem começar em 0 ou em 1 (a documentação não deixa claro), por isso o campo é editável.
-
-### O que me mandar depois do teste
-- Funcionou? Em qual faixa o áudio apareceu (A1, A2, A3…)?
-- O botão **2b** (empurrar clipes) também funcionou?
-- Alguma coisa foi parar numa faixa de vídeo?
-- Se deu erro: o texto do **Log** do painel (print ou copiado).
-- Repita no outro computador (Mac/Windows).
+1. Na UXP Developer Tool, use **Load** (ou **Reload**, se já estava carregado) no plugin Sound Library.
+2. No painel, clique em **Escolher pasta** e selecione a pasta "Sounds fx" (no Mac, fica em algo como `~/Library/CloudStorage/GoogleDrive-…/Meu Drive/Sounds fx`).
+3. Navegue pelas abas, teste a busca e clique num som com o playhead posicionado.
+4. Feche e reabra o Premiere: o painel deve lembrar a pasta (se não lembrar, me avise).
 
 ## Estrutura
 
@@ -36,15 +28,15 @@ O objetivo é confirmar que a API do Premiere faz isso de forma confiável no **
 plugin/
   manifest.json   configuração do plugin (nome, permissões, versão mínima do Premiere)
   index.html      interface do painel
-  main.js         lógica: escolher arquivo, importar, colocar na timeline
+  main.js         lógica: ler a pasta, abas/busca, importar e colocar na timeline
 ```
 
 ## Roteiro
 
 | Fase | Entrega |
 |---|---|
-| 0 | Teste: importar e colocar no playhead |
-| 1 | Escolher pasta da biblioteca (Google Drive) e listar os áudios |
+| 0 ✅ | Teste: importar e colocar no playhead |
+| 1 🔄 | Escolher pasta, categorias por subpasta, favoritos, busca, clique para inserir |
 | 2 | Preview com play/pause |
 | 3 | Categorias, tags e busca (salvas na pasta do Drive, caminhos relativos) |
 | 4 | Clique para inserir com faixa configurável (música / SFX) |
