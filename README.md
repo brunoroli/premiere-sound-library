@@ -8,7 +8,7 @@ Painel (plugin UXP) para o Adobe Premiere Pro: biblioteca de músicas e efeitos 
 - **Fase 1** — o painel agora:
   1. pede a pasta da biblioteca (ex.: "Sounds fx" no Google Drive) e tenta lembrar dela nas próximas aberturas;
   2. lista todos os sons (.wav, .mp3, .aif, .m4a…), ignorando `.DS_Store` e arquivos de cache do Premiere (`.cfa`, `.pek`);
-  3. cria uma aba por subpasta (categoria) e a aba **⭐ Favoritos** para pastas com "Preferidos"/"Favoritos" no nome;
+  3. cria uma aba por pasta onde os sons estão (categoria) — funciona mesmo escolhendo uma pasta acima, como "SFX e Trilhas" — e a aba **⭐ Favoritos** para pastas com "Preferidos"/"Favoritos" no nome;
   4. tem busca por nome;
   5. **clique no som → vai para a timeline no playhead**, na faixa escolhida (A1…A8, padrão A3), sobrescrevendo ou empurrando clipes.
 

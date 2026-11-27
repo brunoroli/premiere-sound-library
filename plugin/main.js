@@ -48,15 +48,17 @@ function isFavoriteFolder(name) {
   return FAVORITE_HINTS.some(h => n.includes(h));
 }
 
-// Percorre a pasta. A categoria é a subpasta de primeiro nível.
+// Percorre a pasta. A categoria é a pasta onde o arquivo está
+// (ex.: .../SFX/Whoosh/x.wav → "Whoosh"), assim funciona escolhendo
+// a pasta raiz ou uma pasta acima dela (ex.: "SFX e Trilhas").
+// Favorito = o arquivo está dentro de uma pasta "Preferidos"/"Favoritos" (em qualquer nível).
 async function scanFolder(folder, category, favorite, out) {
   const entries = await folder.getEntries();
   for (const entry of entries) {
     if (entry.name.startsWith(".")) continue; // .DS_Store e ocultos
     if (entry.isFolder) {
-      const cat = category || entry.name.trim();
       const fav = favorite || isFavoriteFolder(entry.name);
-      await scanFolder(entry, cat, fav, out);
+      await scanFolder(entry, entry.name.trim(), fav, out);
     } else if (AUDIO_EXT.includes(ext(entry.name))) {
       out.push({
         name: entry.name,
