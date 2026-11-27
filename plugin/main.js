@@ -174,6 +174,18 @@ function renderList() {
     const row = document.createElement("div");
     row.className = "item";
     row.title = s.path;
+
+    // Botão de preview ▶ / ■ (não insere na timeline)
+    const play = document.createElement("div");
+    play.className = "play" + (previewingPath === s.path ? " playing" : "");
+    play.textContent = previewingPath === s.path ? "■" : "▶";
+    play.title = "Ouvir (preview)";
+    play.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      togglePreview(s);
+    });
+    row.appendChild(play);
+
     const name = document.createElement("span");
     name.className = "name";
     name.textContent = s.name.replace(/\.[^.]+$/, "");
@@ -216,6 +228,53 @@ function setupControls() {
   document.getElementById("btnRefresh").addEventListener("click", loadLibrary);
 }
 
+// ---------------- preview (Source Monitor do Premiere) ----------------
+// O painel UXP não tem um player de áudio documentado, então usamos o
+// Source Monitor do Premiere: abre o arquivo lá e dá play. Não importa no projeto.
+let previewingPath = null;
+
+function sourceMonitor() {
+  const sm = ppro.SourceMonitor || (ppro.core && ppro.core.SourceMonitor);
+  if (!sm || typeof sm.openFilePath !== "function") {
+    throw new Error("Source Monitor não disponível nesta versão do Premiere.");
+  }
+  return sm;
+}
+
+async function stopPreview() {
+  if (!previewingPath) return;
+  previewingPath = null;
+  try {
+    const sm = sourceMonitor();
+    // Velocidade 0 = pausa; se não funcionar, fecha o clipe no Source Monitor.
+    let ok = false;
+    try { ok = await sm.play(0); } catch (e) { ok = false; }
+    if (!ok && typeof sm.closeClip === "function") await sm.closeClip();
+  } catch (e) {
+    console.warn("Erro ao parar preview:", e);
+  }
+  renderList();
+}
+
+async function togglePreview(sound) {
+  if (previewingPath === sound.path) { await stopPreview(); status(""); return; }
+  try {
+    const sm = sourceMonitor();
+    const opened = await sm.openFilePath(sound.path);
+    if (!opened) throw new Error("o Source Monitor não abriu o arquivo (ele está baixado no computador?)");
+    if (typeof sm.setPosition === "function" && ppro.TickTime) {
+      try { await sm.setPosition(ppro.TickTime.createWithSeconds(0)); } catch (e) { /* opcional */ }
+    }
+    await sm.play(1);
+    previewingPath = sound.path;
+    status(`▶ Tocando "${stripExt(sound.name)}" no Source Monitor`, "ok");
+  } catch (e) {
+    previewingPath = null;
+    status(`Erro no preview: ${e.message || e}`, "err");
+  }
+  renderList();
+}
+
 // ---------------- Premiere: importar e colocar na timeline ----------------
 function stripExt(name) { return name.replace(/\.[^.]+$/, ""); }
 
@@ -249,6 +308,7 @@ async function placeSound(sound, row) {
   busy = true;
   row.classList.add("busy");
   try {
+    await stopPreview();
     const trackNumber = parseInt(document.getElementById("track").value, 10) || DEFAULT_TRACK;
     const audioIdx = trackNumber - 1;          // A1 = índice 0 (confirmado no teste da Fase 0)
     const videoIdx = 0;
