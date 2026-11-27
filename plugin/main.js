@@ -93,14 +93,15 @@ async function chooseFolder() {
     const folder = await localFileSystem.getFolder();
     if (!folder) return;
     rootFolder = folder;
-    // Tenta lembrar a pasta para a próxima vez que o Premiere abrir.
+    // Lembra a pasta para a próxima vez que o Premiere abrir (dois jeitos).
+    setPref("folderPath", folder.nativePath);
     try {
       if (localFileSystem.createPersistentToken) {
         const token = await localFileSystem.createPersistentToken(folder);
         setPref("folderToken", token);
       }
     } catch (e) {
-      console.warn("Não foi possível salvar o acesso à pasta:", e);
+      console.warn("Não foi possível salvar o token da pasta:", e);
     }
     await loadLibrary();
   } catch (e) {
@@ -110,17 +111,35 @@ async function chooseFolder() {
 
 async function restoreFolder() {
   const token = pref("folderToken", null);
-  if (!token || !localFileSystem.getEntryForPersistentToken) return;
-  try {
-    const folder = await localFileSystem.getEntryForPersistentToken(token);
-    if (folder && folder.isFolder) {
-      rootFolder = folder;
-      await loadLibrary();
-    }
-  } catch (e) {
-    console.warn("Pasta salva não pôde ser reaberta:", e);
-    status("Escolha a pasta da biblioteca novamente.");
+  const path = pref("folderPath", null);
+  if (!token && !path) return;
+  const problems = [];
+
+  // 1) Token persistente
+  if (token && localFileSystem.getEntryForPersistentToken) {
+    try {
+      const folder = await localFileSystem.getEntryForPersistentToken(token);
+      if (folder && folder.isFolder) { rootFolder = folder; await loadLibrary(); return; }
+      problems.push("token: entrada inválida");
+    } catch (e) { problems.push("token: " + (e.message || e)); }
+  } else if (token) {
+    problems.push("token: função indisponível");
   }
+
+  // 2) Caminho salvo (precisa de acesso total ao disco no manifest)
+  if (path && localFileSystem.getEntryWithUrl) {
+    try {
+      const url = "file:" + path.replace(/\\/g, "/");
+      const folder = await localFileSystem.getEntryWithUrl(url);
+      if (folder && folder.isFolder) { rootFolder = folder; await loadLibrary(); return; }
+      problems.push("caminho: entrada inválida");
+    } catch (e) { problems.push("caminho: " + (e.message || e)); }
+  } else if (path) {
+    problems.push("caminho: função indisponível");
+  }
+
+  console.warn("Pasta salva não pôde ser reaberta:", problems);
+  status("Não consegui reabrir a pasta salva (" + problems.join(" | ") + "). Escolha a pasta de novo.", "err");
 }
 
 // ---------------- interface ----------------

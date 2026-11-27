@@ -14,6 +14,13 @@ Painel (plugin UXP) para o Adobe Premiere Pro: biblioteca de músicas e efeitos 
 
 - **Fase 2** — botão **▶** em cada som para ouvir antes (preview). O som toca no **Source Monitor** do Premiere (não é importado no projeto). Clique de novo (■) para parar. Clicar no **nome** continua colocando na timeline.
 
+### Painel fixado / plugin some ao reabrir o Premiere
+Plugins carregados pela **UXP Developer Tool** são temporários: ao fechar o Premiere, eles são descarregados, e o painel some do layout. Para o painel ficar instalado de vez:
+1. Na UXP Developer Tool, nos **"..."** do plugin → **Package** → salve o arquivo `.ccx`.
+2. Dê dois cliques no `.ccx` (o Creative Cloud instala o plugin).
+3. Remova o plugin da UXP Developer Tool para não ficar duplicado.
+4. Abra o painel pelo menu **Window** do Premiere e fixe na aba desejada.
+
 ### Requisito: Google Drive
 O plugin lê os arquivos do disco. No Google Drive para computador, marque a pasta da biblioteca como **"Disponível off-line"**.
 
