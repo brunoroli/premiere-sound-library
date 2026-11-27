@@ -22,6 +22,9 @@ Plugins carregados pela **UXP Developer Tool** são temporários: ao fechar o Pr
 3. Remova o plugin da UXP Developer Tool para não ficar duplicado.
 4. Abra o painel pelo menu **Window** do Premiere e fixe na aba desejada.
 
+- **Visual novo (0.4)** — tela inicial "Biblioteca" com cards por categoria (⭐ Favoritos, Todos e cada pasta); ao abrir uma categoria: título grande, busca, filtro **Curto / Médio / Longo** (≤1s, ≤3s, >3s) e cards de som com **▶ (ouvir)**, nome, **duração** e botão **+ (colocar na timeline)**. Clicar no card também toca o preview. Pasta, faixa e modo ficam nas configurações (⚙).
+  - A duração é lida do arquivo (WAV exato; MP3 estimado) em segundo plano e guardada em cache. Outros formatos ficam sem duração.
+
 ### Requisito: Google Drive
 O plugin lê os arquivos do disco. No Google Drive para computador, marque a pasta da biblioteca como **"Disponível off-line"**.
 

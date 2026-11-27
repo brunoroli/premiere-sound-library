@@ -1,6 +1,6 @@
-// Sound Library — Fase 1
-// Escolher a pasta da biblioteca, listar os sons por categoria (subpastas),
-// buscar por nome e clicar para colocar na timeline no playhead.
+// Sound Library
+// Biblioteca dos seus sons (pasta local / Google Drive): categorias por pasta,
+// favoritos, busca, duração, preview e "+" para colocar na timeline no playhead.
 
 const ppro = require("premierepro");
 const { localFileSystem } = require("uxp").storage;
@@ -11,13 +11,10 @@ const AUDIO_EXT = ["wav", "mp3", "aif", "aiff", "m4a", "aac", "flac", "ogg"];
 const FAVORITE_HINTS = ["preferid", "favorit"];
 const MAX_TRACKS = 8;          // opções A1…A8 no seletor de faixa
 const DEFAULT_TRACK = 3;       // A3
-const TAB_ALL = "__all__";
-const TAB_FAV = "__fav__";
 
 // ---------------- estado ----------------
 let rootFolder = null;   // Folder (UXP) da biblioteca
-let sounds = [];         // [{ name, path, category, favorite }]
-let activeTab = TAB_ALL;
+let sounds = [];         // [{ name, path, entry, category, favorite, duration }]
 let query = "";
 const importedItems = new Map(); // path -> ProjectItem (cache desta sessão)
 
@@ -78,9 +75,11 @@ async function loadLibrary() {
   try {
     const found = await scanFolder(rootFolder, null, false, []);
     found.sort((a, b) => a.name.localeCompare(b.name, "pt", { sensitivity: "base" }));
+    for (const f of found) if (f.path in durationCache) f.duration = durationCache[f.path];
     sounds = found;
     document.getElementById("libPath").textContent = rootFolder.nativePath;
     status(`${sounds.length} sons encontrados.`, "ok");
+    setTimeout(computeDurations, 50);
   } catch (e) {
     sounds = [];
     status(`Erro ao ler a pasta: ${e.message || e}`, "err");
@@ -143,87 +142,246 @@ async function restoreFolder() {
   status("Não consegui reabrir a pasta salva (" + problems.join(" | ") + "). Escolha a pasta de novo.", "err");
 }
 
+// ---------------- duração dos sons ----------------
+// Lida do cabeçalho do arquivo (WAV exato; MP3 estimado pelo 1º frame / cabeçalho Xing).
+// Calculada em segundo plano e guardada em cache para não reler os arquivos toda vez.
+const SHORT_MAX = 1;   // até 1s = Curto
+const MEDIUM_MAX = 3;  // até 3s = Médio; acima = Longo
+
+let durationCache = {};
+try { durationCache = JSON.parse(pref("durations", "{}")) || {}; } catch (e) { durationCache = {}; }
+
+function u32le(b, o) { return (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0; }
+function u16le(b, o) { return b[o] | (b[o + 1] << 8); }
+function u32be(b, o) { return ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0; }
+function tag(b, o) { return String.fromCharCode(b[o], b[o + 1], b[o + 2], b[o + 3]); }
+
+function wavDuration(b) {
+  if (b.length < 12 || tag(b, 0) !== "RIFF" || tag(b, 8) !== "WAVE") return null;
+  let o = 12, byteRate = 0, dataSize = 0;
+  while (o + 8 <= b.length) {
+    const id = tag(b, o), size = u32le(b, o + 4);
+    if (id === "fmt ") byteRate = u32le(b, o + 16);
+    if (id === "data") { dataSize = Math.min(size, b.length - o - 8); break; }
+    o += 8 + size + (size % 2);
+  }
+  return byteRate && dataSize ? dataSize / byteRate : null;
+}
+
+const MP3_BITRATES = {
+  1: [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320],   // MPEG1 Layer III
+  2: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],       // MPEG2/2.5 Layer III
+};
+const MP3_RATES = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
+
+function mp3Duration(b) {
+  let o = 0;
+  if (b.length > 10 && b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) { // "ID3"
+    o = 10 + ((b[6] & 0x7f) << 21 | (b[7] & 0x7f) << 14 | (b[8] & 0x7f) << 7 | (b[9] & 0x7f));
+  }
+  for (; o + 4 < b.length; o++) {
+    if (b[o] !== 0xff || (b[o + 1] & 0xe0) !== 0xe0) continue;
+    const ver = (b[o + 1] >> 3) & 3;          // 3=MPEG1, 2=MPEG2, 0=MPEG2.5
+    const layer = (b[o + 1] >> 1) & 3;        // 1=Layer III
+    const brIdx = (b[o + 2] >> 4) & 15, srIdx = (b[o + 2] >> 2) & 3;
+    if (ver === 1 || layer !== 1 || brIdx === 0 || brIdx === 15 || srIdx === 3) continue;
+    const kbps = MP3_BITRATES[ver === 3 ? 1 : 2][brIdx];
+    const rate = MP3_RATES[ver][srIdx];
+    const samplesPerFrame = ver === 3 ? 1152 : 576;
+    const mono = ((b[o + 3] >> 6) & 3) === 3;
+    const sideInfo = ver === 3 ? (mono ? 17 : 32) : (mono ? 9 : 17);
+    const x = o + 4 + sideInfo;
+    if (x + 12 < b.length && (tag(b, x) === "Xing" || tag(b, x) === "Info") && (u32be(b, x + 4) & 1)) {
+      return u32be(b, x + 8) * samplesPerFrame / rate; // VBR: nº de frames
+    }
+    return (b.length - o) * 8 / (kbps * 1000);         // CBR: estimativa pelo tamanho
+  }
+  return null;
+}
+
+async function readDuration(sound) {
+  const e = ext(sound.name);
+  if (e !== "wav" && e !== "mp3") return null;
+  const { formats } = require("uxp").storage;
+  const buf = await sound.entry.read({ format: formats.binary });
+  const b = new Uint8Array(buf);
+  return e === "wav" ? wavDuration(b) : mp3Duration(b);
+}
+
+let durationsRunning = false;
+async function computeDurations() {
+  if (durationsRunning) return;
+  durationsRunning = true;
+  let changed = 0;
+  for (const s of sounds) {
+    if (s.duration !== undefined) continue;
+    try { s.duration = await readDuration(s); } catch (e) { s.duration = null; }
+    durationCache[s.path] = s.duration;
+    if (++changed % 15 === 0) { setPref("durations", JSON.stringify(durationCache)); renderContent(); }
+  }
+  setPref("durations", JSON.stringify(durationCache));
+  durationsRunning = false;
+  if (changed) renderContent();
+}
+
+function durationClass(d) {
+  if (d == null) return null;
+  return d <= SHORT_MAX ? "short" : d <= MEDIUM_MAX ? "medium" : "long";
+}
+function formatDuration(d) {
+  if (d == null) return "";
+  if (d < 10) return d.toFixed(1) + "s";
+  const m = Math.floor(d / 60), s = Math.round(d % 60);
+  return m ? `${m}:${String(s).padStart(2, "0")}` : `${s}s`;
+}
+
 // ---------------- interface ----------------
+// view: "home" (biblioteca com os cards) | VIEW_ALL | VIEW_FAV | nome da categoria
+const VIEW_ALL = "__all__";
+const VIEW_FAV = "__fav__";
+let view = "home";
+let durFilter = "";   // "" | "short" | "medium" | "long"
+
 function categories() {
   const set = new Set(sounds.filter(s => !s.favorite).map(s => s.category));
   return Array.from(set).sort((a, b) => a.localeCompare(b, "pt", { sensitivity: "base" }));
 }
 
+function viewLabel(v) {
+  return v === VIEW_ALL ? "Todos" : v === VIEW_FAV ? "Favoritos" : v;
+}
+
+function soundsInView() {
+  if (view === VIEW_FAV) return sounds.filter(s => s.favorite);
+  if (view === VIEW_ALL || view === "home") return sounds;
+  return sounds.filter(s => s.category === view && !s.favorite);
+}
+
 function visibleSounds() {
   const q = query.trim().toLowerCase();
-  return sounds.filter(s => {
-    if (activeTab === TAB_FAV && !s.favorite) return false;
-    if (activeTab !== TAB_ALL && activeTab !== TAB_FAV && s.category !== activeTab) return false;
+  return soundsInView().filter(s => {
     if (q && !s.name.toLowerCase().includes(q)) return false;
+    if (durFilter && durationClass(s.duration) !== durFilter) return false;
     return true;
   });
 }
 
-function renderTabs() {
-  const tabs = document.getElementById("tabs");
-  tabs.innerHTML = "";
-  const favCount = sounds.filter(s => s.favorite).length;
-  const defs = [{ id: TAB_ALL, label: `Todos (${sounds.length})` }];
-  if (favCount) defs.push({ id: TAB_FAV, label: `⭐ Favoritos (${favCount})` });
-  for (const c of categories()) {
-    defs.push({ id: c, label: `${c} (${sounds.filter(s => s.category === c).length})` });
-  }
-  if (!defs.some(d => d.id === activeTab)) activeTab = TAB_ALL;
-  for (const d of defs) {
-    const el = document.createElement("div");
-    el.className = "tab" + (d.id === activeTab ? " active" : "");
-    el.textContent = d.label;
-    el.addEventListener("click", () => { activeTab = d.id; render(); });
-    tabs.appendChild(el);
+function nSons(n) { return n === 1 ? "1 som" : `${n} sons`; }
+
+function el(tagName, cls, text) {
+  const e = document.createElement(tagName);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function go(v) {
+  view = v;
+  durFilter = "";
+  render();
+}
+
+function renderNav() {
+  const nav = document.getElementById("nav");
+  nav.innerHTML = "";
+  nav.className = "";
+  if (view === "home") { nav.className = ""; return; }
+  nav.className = "nav";
+  const back = el("div", "back", "‹");
+  back.title = "Voltar para a biblioteca";
+  back.addEventListener("click", () => go("home"));
+  nav.appendChild(back);
+  nav.appendChild(el("div", "crumb", "Biblioteca"));
+}
+
+function renderTitle() {
+  const t = document.getElementById("title");
+  t.innerHTML = "";
+  t.className = "title";
+  const searching = query.trim().length > 0;
+  const label = view === "home" ? (searching ? "Resultados" : "Biblioteca") : viewLabel(view);
+  t.appendChild(el("div", "big", (view === VIEW_FAV ? "⭐ " : "") + label));
+  const n = view === "home" && !searching ? sounds.length : visibleSounds().length;
+  t.appendChild(el("div", "count", nSons(n)));
+}
+
+function renderFilters() {
+  const f = document.getElementById("filters");
+  f.innerHTML = "";
+  f.className = "filters";
+  if (view === "home" && !query.trim()) return;
+  for (const [id, label] of [["short", "Curto"], ["medium", "Médio"], ["long", "Longo"]]) {
+    const b = el("div", "filter" + (durFilter === id ? " on" : ""), label);
+    b.addEventListener("click", () => { durFilter = durFilter === id ? "" : id; renderFilters(); renderContent(); });
+    f.appendChild(b);
   }
 }
 
-function renderList() {
-  const list = document.getElementById("list");
-  list.innerHTML = "";
-  if (!rootFolder) {
-    list.innerHTML = '<div class="empty">Escolha a pasta da sua biblioteca (ex.: "Sounds fx" no Google Drive).</div>';
-    return;
-  }
-  const items = visibleSounds();
-  if (!items.length) {
-    list.innerHTML = '<div class="empty">Nenhum som encontrado.</div>';
-    return;
-  }
+function renderCards(box) {
+  const cards = el("div", "cards");
+  const add = (id, name, count, extra) => {
+    const c = el("div", "card" + (extra ? " " + extra : ""));
+    c.appendChild(el("div", "cname", name));
+    c.appendChild(el("div", "ccount", nSons(count)));
+    c.addEventListener("click", () => go(id));
+    cards.appendChild(c);
+  };
+  const favCount = sounds.filter(s => s.favorite).length;
+  if (favCount) add(VIEW_FAV, "⭐ Favoritos", favCount, "fav");
+  add(VIEW_ALL, "Todos", sounds.length);
+  for (const c of categories()) add(c, c, sounds.filter(s => s.category === c && !s.favorite).length);
+  box.appendChild(cards);
+}
+
+function renderRows(box, items) {
+  if (!items.length) { box.appendChild(el("div", "empty", "Nenhum som encontrado.")); return; }
   for (const s of items) {
-    const row = document.createElement("div");
-    row.className = "item";
+    const row = el("div", "item");
     row.title = s.path;
 
-    // Botão de preview ▶ / ■ (não insere na timeline)
-    const play = document.createElement("div");
-    play.className = "play" + (previewingPath === s.path ? " playing" : "");
-    play.textContent = previewingPath === s.path ? "■" : "▶";
+    const playing = previewingPath === s.path;
+    const play = el("div", "play" + (playing ? " playing" : ""), playing ? "■" : "▶");
     play.title = "Ouvir (preview)";
-    play.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      togglePreview(s);
-    });
     row.appendChild(play);
 
-    const name = document.createElement("span");
-    name.className = "name";
-    name.textContent = s.name.replace(/\.[^.]+$/, "");
-    row.appendChild(name);
-    if (activeTab === TAB_ALL || activeTab === TAB_FAV) {
-      const cat = document.createElement("span");
-      cat.className = "cat";
-      cat.textContent = s.favorite ? "⭐" : s.category;
-      row.appendChild(cat);
-    }
-    row.addEventListener("click", () => placeSound(s, row));
-    list.appendChild(row);
+    const info = el("div", "info");
+    info.appendChild(el("div", "name", stripExt(s.name)));
+    const meta = [formatDuration(s.duration), s.favorite ? "⭐ " + s.category : s.category].filter(Boolean).join(" · ");
+    info.appendChild(el("div", "meta", meta));
+    row.appendChild(info);
+
+    const addBtn = el("div", "add", "+");
+    addBtn.title = "Colocar na timeline (playhead)";
+    addBtn.addEventListener("click", (ev) => { ev.stopPropagation(); placeSound(s, row); });
+    row.appendChild(addBtn);
+
+    // clicar no card (ou no ▶) = ouvir; o "+" coloca na timeline
+    row.addEventListener("click", () => togglePreview(s));
+    box.appendChild(row);
   }
 }
 
+function renderContent() {
+  const box = document.getElementById("content");
+  box.innerHTML = "";
+  if (!rootFolder) {
+    box.appendChild(el("div", "empty", "Abra as configurações (⚙) e escolha a pasta da sua biblioteca."));
+    return;
+  }
+  if (view === "home" && !query.trim()) renderCards(box);
+  else renderRows(box, visibleSounds());
+  renderTitle();
+}
+
+// mantém o nome antigo usado pelo preview
+function renderList() { renderContent(); }
+
 function render() {
-  renderTabs();
-  renderList();
+  if (view !== "home" && view !== VIEW_ALL && view !== VIEW_FAV && !categories().includes(view)) view = "home";
+  renderNav();
+  renderTitle();
+  renderFilters();
+  renderContent();
 }
 
 function setupControls() {
@@ -242,10 +400,23 @@ function setupControls() {
   mode.addEventListener("change", () => setPref("mode", mode.value));
 
   const search = document.getElementById("search");
-  search.addEventListener("input", () => { query = search.value || ""; renderList(); });
+  search.addEventListener("input", () => { query = search.value || ""; renderFilters(); renderContent(); });
+
+  const settings = document.getElementById("settings");
+  const gear = document.getElementById("btnSettings");
+  const toggleSettings = (open) => {
+    const show = open === undefined ? settings.classList.contains("hidden") : open;
+    if (show) { settings.classList.remove("hidden"); gear.classList.add("on"); }
+    else { settings.classList.add("hidden"); gear.classList.remove("on"); }
+  };
+  gear.addEventListener("click", () => toggleSettings());
+  if (!pref("folderPath", null)) toggleSettings(true); // primeira vez: mostra as configurações
 
   document.getElementById("btnFolder").addEventListener("click", chooseFolder);
-  document.getElementById("btnRefresh").addEventListener("click", loadLibrary);
+  document.getElementById("btnRefresh").addEventListener("click", () => {
+    for (const s of sounds) delete durationCache[s.path];
+    loadLibrary();
+  });
 }
 
 // ---------------- preview (Source Monitor do Premiere) ----------------
