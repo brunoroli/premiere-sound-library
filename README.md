@@ -12,7 +12,8 @@ Painel (plugin UXP) para o Adobe Premiere Pro: biblioteca de músicas e efeitos 
   4. tem busca por nome;
   5. **clique no som → vai para a timeline no playhead**, na faixa escolhida (A1…A8, padrão A3), sobrescrevendo ou empurrando clipes.
 
-- **Fase 2** — botão **▶** em cada som para ouvir antes (preview). O som toca no **Source Monitor** do Premiere (não é importado no projeto). Clique de novo (■) para parar. Clicar no **nome** continua colocando na timeline.
+- **Fase 2 ✅** — botão **▶** em cada som para ouvir antes (preview); ■ para parar. Clicar no **nome** continua colocando na timeline.
+  - O painel tenta tocar **dentro dele mesmo** (via elemento `<video>`: primeiro `file://`, depois `data:` lendo o arquivo). Se nenhum funcionar, toca no **Source Monitor** (testado e funcionando). A linha de status mostra qual método foi usado: `(file)`, `(data)` ou `(monitor)`.
 
 ### Painel fixado / plugin some ao reabrir o Premiere
 Plugins carregados pela **UXP Developer Tool** são temporários: ao fechar o Premiere, eles são descarregados, e o painel some do layout. Para o painel ficar instalado de vez:

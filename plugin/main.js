@@ -63,6 +63,7 @@ async function scanFolder(folder, category, favorite, out) {
       out.push({
         name: entry.name,
         path: entry.nativePath,
+        entry: entry, // usado para ler o arquivo no preview
         category: category || "Geral",
         favorite: favorite,
       });
@@ -260,15 +261,119 @@ function sourceMonitor() {
   return sm;
 }
 
+// Preview DENTRO do painel: tenta 2 jeitos com um <video> escondido
+// (o UXP documenta <video>, mas não <audio>):
+//   "file"  → src = file:///caminho
+//   "data"  → lê o arquivo e usa src = data:audio/...;base64,...
+// Se nenhum tocar, cai no Source Monitor ("monitor"), que já sabemos que funciona.
+// O método que funcionar fica salvo para as próximas vezes.
+let previewMethod = null;    // "file" | "data" | "monitor"
+let previewingVia = null;
+
+const MIME = { wav: "audio/wav", mp3: "audio/mpeg", aif: "audio/aiff", aiff: "audio/aiff",
+               m4a: "audio/mp4", aac: "audio/aac", flac: "audio/flac", ogg: "audio/ogg" };
+
+function player() {
+  let v = document.getElementById("player");
+  if (!v) {
+    v = document.createElement("video");
+    v.id = "player";
+    v.style.width = "1px"; v.style.height = "1px"; v.style.opacity = "0";
+    v.addEventListener("ended", () => { previewingPath = null; previewingVia = null; renderList(); });
+    document.body.appendChild(v);
+  }
+  return v;
+}
+
+function toBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let out = "";
+  let i = 0;
+  for (; i + 2 < bytes.length; i += 3) {
+    const n = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+    out += chars[(n >> 18) & 63] + chars[(n >> 12) & 63] + chars[(n >> 6) & 63] + chars[n & 63];
+  }
+  if (i < bytes.length) {
+    const n = (bytes[i] << 16) | ((i + 1 < bytes.length ? bytes[i + 1] : 0) << 8);
+    out += chars[(n >> 18) & 63] + chars[(n >> 12) & 63];
+    out += i + 1 < bytes.length ? chars[(n >> 6) & 63] : "=";
+    out += "=";
+  }
+  return out;
+}
+
+// Toca src no <video> e confirma que está tocando de verdade (ou falha em ~2s).
+function playInPanel(src) {
+  return new Promise((resolve, reject) => {
+    const v = player();
+    let done = false;
+    const finish = (ok, err) => {
+      if (done) return;
+      done = true;
+      clearInterval(timer);
+      v.removeEventListener("error", onError);
+      ok ? resolve() : reject(err);
+    };
+    const onError = () => finish(false, new Error("o player do painel recusou o arquivo"));
+    v.addEventListener("error", onError);
+    const started = Date.now();
+    const timer = setInterval(() => {
+      if (v.currentTime > 0.05) finish(true);
+      else if (Date.now() - started > 2000) {
+        try { v.pause(); } catch (e) { /* ignora */ }
+        finish(false, new Error("o player do painel não começou a tocar"));
+      }
+    }, 100);
+    try {
+      v.src = src;
+      try { v.currentTime = 0; } catch (e) { /* ignora */ }
+      v.volume = 1;
+      v.play();
+    } catch (e) { finish(false, e); }
+  });
+}
+
+async function previewInPanel(sound, method) {
+  if (method === "file") {
+    return playInPanel("file://" + sound.path.replace(/\\/g, "/"));
+  }
+  if (method === "data") {
+    const { formats } = require("uxp").storage;
+    const buf = await sound.entry.read({ format: formats.binary });
+    const mime = MIME[ext(sound.name)] || "audio/wav";
+    return playInPanel(`data:${mime};base64,${toBase64(buf)}`);
+  }
+  throw new Error("método desconhecido");
+}
+
+async function previewInMonitor(sound) {
+  const sm = sourceMonitor();
+  const opened = await sm.openFilePath(sound.path);
+  if (!opened) throw new Error("o Source Monitor não abriu o arquivo (ele está baixado no computador?)");
+  if (typeof sm.setPosition === "function" && ppro.TickTime) {
+    try { await sm.setPosition(ppro.TickTime.createWithSeconds(0)); } catch (e) { /* opcional */ }
+  }
+  await sm.play(1);
+}
+
 async function stopPreview() {
   if (!previewingPath) return;
+  const via = previewingVia;
   previewingPath = null;
+  previewingVia = null;
   try {
-    const sm = sourceMonitor();
-    // Velocidade 0 = pausa; se não funcionar, fecha o clipe no Source Monitor.
-    let ok = false;
-    try { ok = await sm.play(0); } catch (e) { ok = false; }
-    if (!ok && typeof sm.closeClip === "function") await sm.closeClip();
+    if (via === "monitor") {
+      const sm = sourceMonitor();
+      // Velocidade 0 = pausa; se não funcionar, fecha o clipe no Source Monitor.
+      let ok = false;
+      try { ok = await sm.play(0); } catch (e) { ok = false; }
+      if (!ok && typeof sm.closeClip === "function") await sm.closeClip();
+    } else {
+      const v = player();
+      v.pause();
+      try { v.currentTime = 0; } catch (e) { /* ignora */ }
+    }
   } catch (e) {
     console.warn("Erro ao parar preview:", e);
   }
@@ -276,21 +381,31 @@ async function stopPreview() {
 }
 
 async function togglePreview(sound) {
-  if (previewingPath === sound.path) { await stopPreview(); status(""); return; }
-  try {
-    const sm = sourceMonitor();
-    const opened = await sm.openFilePath(sound.path);
-    if (!opened) throw new Error("o Source Monitor não abriu o arquivo (ele está baixado no computador?)");
-    if (typeof sm.setPosition === "function" && ppro.TickTime) {
-      try { await sm.setPosition(ppro.TickTime.createWithSeconds(0)); } catch (e) { /* opcional */ }
+  const wasThis = previewingPath === sound.path;
+  await stopPreview();
+  if (wasThis) { status(""); return; }
+
+  // Começa pelo método que funcionou da última vez; se falhar, tenta os outros.
+  const order = [previewMethod, "file", "data", "monitor"].filter((m, i, a) => m && a.indexOf(m) === i);
+  const problems = [];
+  for (const method of order) {
+    try {
+      if (method === "monitor") await previewInMonitor(sound);
+      else await previewInPanel(sound, method);
+      previewMethod = method;
+      previewingPath = sound.path;
+      previewingVia = method;
+      const where = method === "monitor" ? "no Source Monitor" : "no painel";
+      status(`▶ Tocando "${stripExt(sound.name)}" ${where} (${method})`, "ok");
+      renderList();
+      return;
+    } catch (e) {
+      problems.push(`${method}: ${e.message || e}`);
     }
-    await sm.play(1);
-    previewingPath = sound.path;
-    status(`▶ Tocando "${stripExt(sound.name)}" no Source Monitor`, "ok");
-  } catch (e) {
-    previewingPath = null;
-    status(`Erro no preview: ${e.message || e}`, "err");
   }
+  // Se o método salvo falhou (ex.: arquivo específico), tenta todos na próxima vez.
+  previewMethod = null;
+  status("Erro no preview — " + problems.join(" | "), "err");
   renderList();
 }
 
