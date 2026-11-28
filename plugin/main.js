@@ -76,6 +76,8 @@ async function loadLibrary() {
     const found = await scanFolder(rootFolder, null, false, []);
     found.sort((a, b) => a.name.localeCompare(b.name, "pt", { sensitivity: "base" }));
     for (const f of found) if (f.path in durationCache) f.duration = durationCache[f.path];
+    for (const f of found) f.rel = relPath(f.path);
+    await loadUserData();
     sounds = found;
     document.getElementById("libPath").textContent = rootFolder.nativePath;
     status(`${sounds.length} sons encontrados.`, "ok");
@@ -85,6 +87,71 @@ async function loadLibrary() {
     status(`Erro ao ler a pasta: ${e.message || e}`, "err");
   }
   render();
+}
+
+
+// ---------------- favoritos e recentes (salvos na própria pasta da biblioteca) ----------------
+// Ficam no arquivo oculto ".soundlibrary.json" dentro da pasta escolhida. Como a pasta está no
+// Google Drive, os favoritos e recentes aparecem iguais no Mac e no Windows.
+// Os caminhos são guardados relativos à pasta (ex.: "SFX/Whoosh/Air Swoosh.wav").
+const DATA_FILE = ".soundlibrary.json";
+const MAX_RECENTS = 30;
+let userData = { favorites: [], recents: [] };
+let favSet = new Set();
+
+function relPath(fullPath) {
+  const root = rootFolder ? rootFolder.nativePath.replace(/[\\/]+$/, "") : "";
+  let rel = fullPath.startsWith(root) ? fullPath.slice(root.length) : fullPath;
+  return rel.replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+async function loadUserData() {
+  userData = { favorites: [], recents: [] };
+  try {
+    const f = await rootFolder.getEntry(DATA_FILE);
+    const txt = await f.read();
+    const d = JSON.parse(txt);
+    if (Array.isArray(d.favorites)) userData.favorites = d.favorites;
+    if (Array.isArray(d.recents)) userData.recents = d.recents;
+  } catch (e) {
+    // ainda não existe (ou não deu para ler): tenta a cópia local do painel
+    try { const d = JSON.parse(pref("userData", "{}")); if (d.favorites) userData = Object.assign(userData, d); } catch (e2) { /* ignora */ }
+  }
+  favSet = new Set(userData.favorites);
+}
+
+let saveTimer = null;
+function saveUserData() {
+  userData.favorites = Array.from(favSet);
+  setPref("userData", JSON.stringify(userData)); // cópia local de segurança
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try {
+      const f = await rootFolder.createFile(DATA_FILE, { overwrite: true });
+      await f.write(JSON.stringify(userData, null, 2));
+    } catch (e) {
+      status("Favoritos salvos só neste computador (não consegui gravar na pasta): " + (e.message || e), "err");
+    }
+  }, 400);
+}
+
+function isFav(s) { return s.favorite || favSet.has(s.rel); }
+
+function toggleFavorite(s) {
+  if (s.favorite) { status("Este som é favorito porque está na pasta \"" + s.category + "\"."); return; }
+  if (favSet.has(s.rel)) favSet.delete(s.rel); else favSet.add(s.rel);
+  saveUserData();
+  renderContent();
+}
+
+function addRecent(s) {
+  userData.recents = [s.rel].concat(userData.recents.filter(r => r !== s.rel)).slice(0, MAX_RECENTS);
+  saveUserData();
+}
+
+function recentSounds() {
+  const byRel = new Map(sounds.map(s => [s.rel, s]));
+  return userData.recents.map(r => byRel.get(r)).filter(Boolean);
 }
 
 // ---------------- escolher / lembrar a pasta ----------------
@@ -243,6 +310,7 @@ function formatDuration(d) {
 // view: "home" (biblioteca com os cards) | VIEW_ALL | VIEW_FAV | nome da categoria
 const VIEW_ALL = "__all__";
 const VIEW_FAV = "__fav__";
+const VIEW_RECENT = "__recent__";
 let view = "home";
 let durFilter = "";   // "" | "short" | "medium" | "long"
 
@@ -252,11 +320,12 @@ function categories() {
 }
 
 function viewLabel(v) {
-  return v === VIEW_ALL ? "Todos" : v === VIEW_FAV ? "Favoritos" : v;
+  return v === VIEW_ALL ? "Todos" : v === VIEW_FAV ? "Favoritos" : v === VIEW_RECENT ? "Recentes" : v;
 }
 
 function soundsInView() {
-  if (view === VIEW_FAV) return sounds.filter(s => s.favorite);
+  if (view === VIEW_FAV) return sounds.filter(isFav);
+  if (view === VIEW_RECENT) return recentSounds();
   if (view === VIEW_ALL || view === "home") return sounds;
   return sounds.filter(s => s.category === view && !s.favorite);
 }
@@ -301,7 +370,8 @@ function renderTitle() {
   t.innerHTML = "";
   const searching = query.trim().length > 0;
   const label = view === "home" ? (searching ? "Resultados" : "Biblioteca") : viewLabel(view);
-  t.appendChild(el("div", "big", (view === VIEW_FAV ? "⭐ " : "") + label));
+  const icon = view === VIEW_FAV ? "⭐ " : view === VIEW_RECENT ? "🕘 " : "";
+  t.appendChild(el("div", "big", icon + label));
   const n = view === "home" && !searching ? sounds.length : visibleSounds().length;
   t.appendChild(el("div", "count", nSons(n)));
 }
@@ -338,8 +408,10 @@ function renderCards(box) {
     c.addEventListener("click", () => go(id));
     cards.appendChild(c);
   };
-  const favCount = sounds.filter(s => s.favorite).length;
+  const favCount = sounds.filter(isFav).length;
   if (favCount) add(VIEW_FAV, "⭐ Favoritos", favCount, "fav");
+  const recCount = recentSounds().length;
+  if (recCount) add(VIEW_RECENT, "🕘 Recentes", recCount);
   add(VIEW_ALL, "Todos", sounds.length);
   for (const c of categories()) add(c, c, sounds.filter(s => s.category === c && !s.favorite).length);
   box.appendChild(cards);
@@ -362,9 +434,19 @@ function renderRows(box, items) {
 
     const info = el("div", "info");
     info.appendChild(el("div", "name", stripExt(s.name)));
-    const meta = [formatDuration(s.duration), s.favorite ? "⭐ " + s.category : s.category].filter(Boolean).join(" · ");
+    const meta = [formatDuration(s.duration), s.category].filter(Boolean).join(" · ");
     info.appendChild(el("div", "meta", meta));
     row.appendChild(info);
+
+    const fav = isFav(s);
+    const star = el("div", "star" + (fav ? " on" : "") + (s.favorite ? " fixed" : ""), fav ? "★" : "☆");
+    star.title = s.favorite ? "Favorito (pela pasta)" : fav ? "Tirar dos favoritos" : "Favoritar";
+    star.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      ev.__handledByAdd = true;
+      toggleFavorite(s);
+    });
+    row.appendChild(star);
 
     const addBtn = el("div", "add", "+");
     addBtn.title = "Colocar na timeline (playhead)";
@@ -378,7 +460,7 @@ function renderRows(box, items) {
     // clicar no card (ou no ▶) = ouvir; o "+" coloca na timeline
     row.addEventListener("click", (ev) => {
       // Se o clique foi no "+", não toca o preview (caso o stopPropagation não funcione no UXP).
-      if (ev && (ev.__handledByAdd || ev.target === addBtn)) return;
+      if (ev && (ev.__handledByAdd || ev.target === addBtn || ev.target === star)) return;
       togglePreview(s);
     });
     grid.appendChild(row);
@@ -392,7 +474,17 @@ function renderContent() {
     box.appendChild(el("div", "empty", "Abra as configurações (⚙) e escolha a pasta da sua biblioteca."));
     return;
   }
-  if (view === "home" && !query.trim()) renderCards(box);
+  if (view === "home" && !query.trim()) {
+    // No topo da tela inicial: os últimos sons usados (até 2 linhas da grade)
+    const rec = recentSounds();
+    if (rec.length) {
+      box.appendChild(el("div", "section", "🕘 Usados recentemente"));
+      const perRow = computeColumns(260);
+      renderRows(box, rec.slice(0, Math.max(3, perRow * 2)));
+      box.appendChild(el("div", "section", "Categorias"));
+    }
+    renderCards(box);
+  }
   else renderRows(box, visibleSounds());
   renderTitle();
 }
@@ -401,7 +493,7 @@ function renderContent() {
 function renderList() { renderContent(); }
 
 function render() {
-  if (view !== "home" && view !== VIEW_ALL && view !== VIEW_FAV && !categories().includes(view)) view = "home";
+  if (view !== "home" && view !== VIEW_ALL && view !== VIEW_FAV && view !== VIEW_RECENT && !categories().includes(view)) view = "home";
   renderNav();
   renderTitle();
   renderFilters();
@@ -441,6 +533,16 @@ function setupControls() {
   const mode = document.getElementById("mode");
   mode.value = pref("placement", "auto");
   mode.addEventListener("change", () => setPref("placement", mode.value));
+
+  const gain = document.getElementById("gain");
+  for (const v of [-18, -12, -9, -6, -3, 0, 3, 6]) {
+    const opt = document.createElement("option");
+    opt.value = String(v);
+    opt.textContent = (v > 0 ? "+" : "") + v + " dB";
+    gain.appendChild(opt);
+  }
+  gain.value = pref("gain", "0");
+  gain.addEventListener("change", () => setPref("gain", gain.value));
 
   const search = document.getElementById("search");
   search.addEventListener("input", () => { query = search.value || ""; renderFilters(); renderContent(); });
@@ -753,6 +855,61 @@ async function findFreeAudioTrack(sequence, firstIdx, start, end) {
   return { index: Math.max(count, firstIdx), isNew: true, log };
 }
 
+
+// ---------------- volume (dB) do som inserido ----------------
+// Depois de colocar o som, acha o clipe novo na faixa e ajusta o "Level" do efeito "Volume".
+// Em vez de supor a escala interna do Premiere, lê o valor atual (0 dB) e multiplica pelo
+// fator do ganho; se o valor lido for 0, entende que a escala é em dB e usa o valor direto.
+function gainDb() { return parseFloat(document.getElementById("gain").value) || 0; }
+
+async function findClipAt(sequence, trackIdx, startSec) {
+  const track = await sequence.getAudioTrack(trackIdx);
+  if (!track) return null;
+  const items = await clipsOnTrack(track);
+  for (const it of items) {
+    if (!it || typeof it.getStartTime !== "function") continue;
+    try { if (Math.abs((await it.getStartTime()).seconds - startSec) < 0.05) return it; } catch (e) { /* ignora */ }
+  }
+  return null;
+}
+
+async function applyGain(project, sequence, trackIdx, startSec, db) {
+  const clip = await findClipAt(sequence, trackIdx, startSec);
+  if (!clip) throw new Error("não achei o clipe inserido");
+  const chain = await clip.getComponentChain();
+  let level = null;
+  const count = chain.getComponentCount();
+  for (let i = 0; i < count && !level; i++) {
+    const comp = chain.getComponentAtIndex(i);
+    let name = "";
+    try { name = (await comp.getDisplayName()) || ""; } catch (e) { /* ignora */ }
+    if (!/volume/i.test(name) || /canal|channel/i.test(name)) continue;
+    for (let j = 0; j < comp.getParamCount(); j++) {
+      const p = comp.getParam(j);
+      if (p && /level|nível|nivel/i.test(p.displayName || "")) { level = p; break; }
+    }
+    if (!level && comp.getParamCount() > 1) level = comp.getParam(1); // Bypass, Level
+  }
+  if (!level) throw new Error("não achei o controle de volume do clipe");
+
+  let current = null;
+  try { const k = await level.getStartValue(); current = k && k.value ? Number(k.value.value) : null; } catch (e) { /* ignora */ }
+  let target;
+  if (current && current > 0) target = Math.min(1, current * Math.pow(10, db / 20)); // escala linear
+  else target = db;                                                                  // escala em dB
+
+  let ok = false;
+  project.lockedAccess(() => {
+    const actions = [];
+    try { if (level.isTimeVarying && level.isTimeVarying()) actions.push(level.createSetTimeVaryingAction(false)); } catch (e) { /* ignora */ }
+    actions.push(level.createSetValueAction(level.createKeyframe(target), true));
+    ok = project.executeTransaction((compound) => {
+      for (const a of actions) compound.addAction(a);
+    }, `Sound Library: volume ${db > 0 ? "+" : ""}${db} dB`);
+  });
+  if (!ok) throw new Error("o Premiere não aplicou o volume");
+}
+
 let busy = false;
 async function placeSound(sound, row) {
   if (busy) { status("Aguarde: ainda colocando o som anterior…"); return; }
@@ -810,8 +967,21 @@ async function placeSound(sound, row) {
     });
 
     const where = `A${audioIdx + 1}${newTrack ? " (faixa nova)" : ""}`;
-    if (success) status(`✅ "${stripExt(sound.name)}" em ${where} · ${time.seconds.toFixed(2)}s${trackLog ? "  [" + trackLog + "]" : ""}`, "ok");
-    else status("O Premiere não aplicou a ação.", "err");
+    if (!success) { status("O Premiere não aplicou a ação.", "err"); return; }
+
+    addRecent(sound);
+    let gainNote = "";
+    const db = gainDb();
+    if (db !== 0) {
+      step = "ajustar volume";
+      try {
+        await applyGain(project, sequence, audioIdx, time.seconds, db);
+        gainNote = ` · ${db > 0 ? "+" : ""}${db} dB`;
+      } catch (e) {
+        gainNote = ` · volume não ajustado (${e.message || e})`;
+      }
+    }
+    status(`✅ "${stripExt(sound.name)}" em ${where} · ${time.seconds.toFixed(2)}s${gainNote}`, gainNote.includes("não ajustado") ? "err" : "ok");
   } catch (e) {
     // Se o item em cache ficou inválido (ex.: removido do projeto), tenta de novo na próxima.
     importedItems.delete(sound.path);

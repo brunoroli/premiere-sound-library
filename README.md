@@ -28,6 +28,12 @@ Plugins carregados pela **UXP Developer Tool** são temporários: ao fechar o Pr
 
 - **Faixa livre automática (0.6)** — modo padrão "Faixa livre (automático)": antes de colocar o som, o painel olha as faixas de áudio a partir da faixa escolhida (padrão A3) e usa a primeira **sem nenhum clipe no trecho** do playhead até o fim do som (A3 → A4 → A5…). Se todas estiverem ocupadas, cria uma faixa nova. Os modos antigos continuam disponíveis: "Sempre na faixa (sobrescreve)" e "Sempre na faixa (empurra clipes)".
 
+- **Favoritos, recentes e volume (0.7)**
+  - **☆/★ em cada som** para favoritar direto no painel (sem mover arquivos). Sons da pasta "Preferidos" continuam favoritos (★ fixa).
+  - **Recentes:** a tela inicial mostra "Usados recentemente" no topo e há um card 🕘 Recentes com os últimos 30.
+  - Favoritos e recentes ficam no arquivo oculto **`.soundlibrary.json`** dentro da pasta da biblioteca (sincroniza pelo Drive entre Mac e Windows; caminhos relativos). Há uma cópia local de segurança no painel.
+  - **🔊 Volume (dB)** no topo (−18 a +6 dB): depois de inserir, o painel ajusta o "Level" do efeito Volume do clipe. Em 0 dB não mexe em nada.
+
 ### Requisito: Google Drive
 O plugin lê os arquivos do disco. No Google Drive para computador, marque a pasta da biblioteca como **"Disponível off-line"**.
 
