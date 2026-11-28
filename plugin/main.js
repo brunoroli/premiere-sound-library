@@ -704,13 +704,14 @@ async function clipsOnTrack(track) {
         const list = (await track.getTrackItems(T.CLIP, true)) || [];
         const real = [];
         for (const it of list) {
+          if (!it) continue;
           let t = null;
           try { t = it.getType ? await it.getType() : null; } catch (e) { t = null; }
           if (t !== extra) real.push(it);
         }
         if (real.length) return real;
       } else {
-        const list = (await track.getTrackItems(type, false)) || [];
+        const list = ((await track.getTrackItems(type, false)) || []).filter(Boolean);
         if (list.length) return list;
       }
     } catch (e) { /* tenta o próximo jeito */ }
@@ -721,13 +722,19 @@ async function clipsOnTrack(track) {
 // Quantos clipes desta faixa se sobrepõem ao trecho [start, end] (segundos)?
 async function overlapsOnTrack(track, start, end) {
   const items = await clipsOnTrack(track);
-  let overlaps = 0;
+  let overlaps = 0, total = 0, unreadable = 0;
   for (const it of items) {
-    const a = (await it.getStartTime()).seconds;
-    const b = (await it.getEndTime()).seconds;
-    if (a < end - 0.001 && b > start + 0.001) overlaps++;
+    // A lista pode vir com posições vazias (null) ou itens sem tempo: ignora esses.
+    if (!it || typeof it.getStartTime !== "function" || typeof it.getEndTime !== "function") continue;
+    try {
+      const st = await it.getStartTime();
+      const en = await it.getEndTime();
+      if (!st || !en) { unreadable++; continue; }
+      total++;
+      if (st.seconds < end - 0.001 && en.seconds > start + 0.001) overlaps++;
+    } catch (e) { unreadable++; }
   }
-  return { total: items.length, overlaps };
+  return { total, overlaps, unreadable };
 }
 
 // Procura, a partir da faixa escolhida e descendo na timeline (A3, A4, A5…),
@@ -740,7 +747,7 @@ async function findFreeAudioTrack(sequence, firstIdx, start, end) {
     const track = await sequence.getAudioTrack(i);
     if (!track) continue;
     const r = await overlapsOnTrack(track, start, end);
-    log.push(`A${i + 1}: ${r.total} clipes${r.overlaps ? " (ocupada)" : ""}`);
+    log.push(`A${i + 1}: ${r.total} clipes${r.unreadable ? ` (+${r.unreadable} ilegíveis)` : ""}${r.overlaps ? " (ocupada)" : ""}`);
     if (!r.overlaps) return { index: i, isNew: false, log };
   }
   return { index: Math.max(count, firstIdx), isNew: true, log };
