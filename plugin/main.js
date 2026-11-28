@@ -685,27 +685,65 @@ async function soundLength(item, sound) {
   return 5;
 }
 
-// A faixa está livre entre start e end (segundos)?
-async function trackIsFree(track, start, end) {
-  const CLIP = ppro.Constants && ppro.Constants.TrackItemType ? ppro.Constants.TrackItemType.CLIP : 1;
-  const items = (await track.getTrackItems(CLIP, false)) || [];
+// Constantes da API: a referência mostra o objeto como "constants"; os tipos TypeScript como "Constants".
+function apiConstants() { return ppro.Constants || ppro.constants || null; }
+
+// Lista os clipes de uma faixa de áudio. Tenta o valor oficial de "CLIP" e, se não vier nada,
+// pede todos os itens (incluindo vazios) e descarta os vazios.
+async function clipsOnTrack(track) {
+  const C = apiConstants();
+  const T = C && C.TrackItemType;
+  const tries = [];
+  if (T && T.CLIP !== undefined) tries.push([T.CLIP, false]);
+  tries.push([1, false]);
+  if (T && T.EMPTY !== undefined) tries.push(["ALL", T.EMPTY]);
+  for (const [type, extra] of tries) {
+    try {
+      if (type === "ALL") {
+        // todos os tipos com itens vazios incluídos: descarta os itens "EMPTY"
+        const list = (await track.getTrackItems(T.CLIP, true)) || [];
+        const real = [];
+        for (const it of list) {
+          let t = null;
+          try { t = it.getType ? await it.getType() : null; } catch (e) { t = null; }
+          if (t !== extra) real.push(it);
+        }
+        if (real.length) return real;
+      } else {
+        const list = (await track.getTrackItems(type, false)) || [];
+        if (list.length) return list;
+      }
+    } catch (e) { /* tenta o próximo jeito */ }
+  }
+  return [];
+}
+
+// Quantos clipes desta faixa se sobrepõem ao trecho [start, end] (segundos)?
+async function overlapsOnTrack(track, start, end) {
+  const items = await clipsOnTrack(track);
+  let overlaps = 0;
   for (const it of items) {
     const a = (await it.getStartTime()).seconds;
     const b = (await it.getEndTime()).seconds;
-    if (a < end - 0.001 && b > start + 0.001) return false; // se sobrepõe
+    if (a < end - 0.001 && b > start + 0.001) overlaps++;
   }
-  return true;
+  return { total: items.length, overlaps };
 }
 
 // Procura, a partir da faixa escolhida e descendo na timeline (A3, A4, A5…),
 // a primeira faixa sem nenhum clipe no trecho. Se todas estiverem ocupadas, cria uma faixa nova.
+// "log" guarda o que foi visto em cada faixa (aparece na linha de status).
 async function findFreeAudioTrack(sequence, firstIdx, start, end) {
   const count = await sequence.getAudioTrackCount();
+  const log = [];
   for (let i = Math.max(0, firstIdx); i < count; i++) {
     const track = await sequence.getAudioTrack(i);
-    if (track && await trackIsFree(track, start, end)) return { index: i, isNew: false };
+    if (!track) continue;
+    const r = await overlapsOnTrack(track, start, end);
+    log.push(`A${i + 1}: ${r.total} clipes${r.overlaps ? " (ocupada)" : ""}`);
+    if (!r.overlaps) return { index: i, isNew: false, log };
   }
-  return { index: Math.max(count, firstIdx), isNew: true };
+  return { index: Math.max(count, firstIdx), isNew: true, log };
 }
 
 let busy = false;
@@ -738,12 +776,14 @@ async function placeSound(sound, row) {
     // Faixa: índice começa em 0 (A1 = 0), confirmado no teste da Fase 0.
     let audioIdx = trackNumber - 1;
     let newTrack = false;
+    let trackLog = "";
     if (mode === "auto") {
       step = "procurar faixa livre";
       const len = await soundLength(item, sound);
       const found = await findFreeAudioTrack(sequence, audioIdx, time.seconds, time.seconds + len);
       audioIdx = found.index;
       newTrack = found.isNew;
+      trackLog = found.log.join(" · ");
     }
 
     step = "preparar edição";
@@ -763,7 +803,7 @@ async function placeSound(sound, row) {
     });
 
     const where = `A${audioIdx + 1}${newTrack ? " (faixa nova)" : ""}`;
-    if (success) status(`✅ "${stripExt(sound.name)}" em ${where} · ${time.seconds.toFixed(2)}s`, "ok");
+    if (success) status(`✅ "${stripExt(sound.name)}" em ${where} · ${time.seconds.toFixed(2)}s${trackLog ? "  [" + trackLog + "]" : ""}`, "ok");
     else status("O Premiere não aplicou a ação.", "err");
   } catch (e) {
     // Se o item em cache ficou inválido (ex.: removido do projeto), tenta de novo na próxima.
