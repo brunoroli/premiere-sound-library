@@ -279,6 +279,7 @@ function go(v) {
   view = v;
   durFilter = "";
   render();
+  try { document.getElementById("content").scrollTop = 0; } catch (e) { /* ignora */ }
 }
 
 function renderNav() {
@@ -382,7 +383,23 @@ function render() {
   renderTitle();
   renderFilters();
   renderContent();
+  fitContent();
 }
+
+// Garante que só a lista role: ajusta a altura da lista ao espaço livre do painel.
+// (Reforço para o CSS flex, caso o UXP não calcule a altura sozinho.)
+function fitContent() {
+  try {
+    const content = document.getElementById("content");
+    const statusEl = document.getElementById("status");
+    const top = content.getBoundingClientRect().top;
+    const reserved = (statusEl ? statusEl.offsetHeight : 14) + 34; // status + espaçamentos
+    const h = Math.max(120, Math.floor(window.innerHeight - top - reserved));
+    content.style.height = h + "px";
+  } catch (e) { /* o CSS cuida */ }
+}
+try { window.addEventListener("resize", fitContent); } catch (e) { /* ignora */ }
+setInterval(fitContent, 1000); // painel redimensionado/encaixado sem evento de resize
 
 function setupControls() {
   const track = document.getElementById("track");
@@ -409,7 +426,7 @@ function setupControls() {
     if (show) { settings.classList.remove("hidden"); gear.classList.add("on"); }
     else { settings.classList.add("hidden"); gear.classList.remove("on"); }
   };
-  gear.addEventListener("click", () => toggleSettings());
+  gear.addEventListener("click", () => { toggleSettings(); fitContent(); });
   if (!pref("folderPath", null)) toggleSettings(true); // primeira vez: mostra as configurações
 
   document.getElementById("btnFolder").addEventListener("click", chooseFolder);

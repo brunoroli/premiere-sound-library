@@ -4,7 +4,16 @@
   <meta charset="utf-8" />
   <style>
     * { box-sizing: border-box; }
-    body { font-family: sans-serif; font-size: 12px; color: #e8e8ea; background: #141416; margin: 0; padding: 10px; }
+    /* O painel ocupa a altura toda; só a lista (#content) rola. */
+    html, body { height: 100%; }
+    body { font-family: sans-serif; font-size: 12px; color: #e8e8ea; background: #141416; margin: 0; padding: 10px;
+           display: flex; flex-direction: column; overflow: hidden; }
+    .header, #settings, #status { flex-shrink: 0; }
+    #main { flex-grow: 1; min-height: 0; display: flex; flex-direction: column; }
+    #nav, #title, #search, #filters { flex-shrink: 0; }
+    #content { flex-grow: 1; min-height: 0; overflow-y: scroll; padding-right: 4px; }
+    #content::-webkit-scrollbar { width: 6px; }
+    #content::-webkit-scrollbar-thumb { background: #3a3a42; border-radius: 3px; }
 
     /* cabeçalho */
     .header { display: flex; flex-direction: row; align-items: center; margin-bottom: 10px; }
