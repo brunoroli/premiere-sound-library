@@ -26,6 +26,8 @@ Plugins carregados pela **UXP Developer Tool** são temporários: ao fechar o Pr
 - **Layout compacto (0.5)** — uma linha de topo (voltar, título, nº de sons, ⚙) e uma linha com busca + filtros; todo o resto é a lista, que rola. Em painéis largos a lista vira **grade com várias colunas**. As configurações fecham sozinhas depois de escolher a pasta.
   - A duração é lida do arquivo (WAV exato; MP3 estimado) em segundo plano e guardada em cache. Outros formatos ficam sem duração.
 
+- **Faixa livre automática (0.6)** — modo padrão "Faixa livre (automático)": antes de colocar o som, o painel olha as faixas de áudio a partir da faixa escolhida (padrão A3) e usa a primeira **sem nenhum clipe no trecho** do playhead até o fim do som (A3 → A4 → A5…). Se todas estiverem ocupadas, cria uma faixa nova. Os modos antigos continuam disponíveis: "Sempre na faixa (sobrescreve)" e "Sempre na faixa (empurra clipes)".
+
 ### Requisito: Google Drive
 O plugin lê os arquivos do disco. No Google Drive para computador, marque a pasta da biblioteca como **"Disponível off-line"**.
 

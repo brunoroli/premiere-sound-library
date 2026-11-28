@@ -439,8 +439,8 @@ function setupControls() {
   track.addEventListener("change", () => setPref("track", track.value));
 
   const mode = document.getElementById("mode");
-  mode.value = pref("mode", "overwrite");
-  mode.addEventListener("change", () => setPref("mode", mode.value));
+  mode.value = pref("placement", "auto");
+  mode.addEventListener("change", () => setPref("placement", mode.value));
 
   const search = document.getElementById("search");
   search.addEventListener("input", () => { query = search.value || ""; renderFilters(); renderContent(); });
@@ -671,6 +671,43 @@ async function getOrImportItem(project, sound) {
   return item;
 }
 
+
+// ---------------- escolher a faixa livre ----------------
+// Duração do som na timeline: pelo Premiere (mídia importada); senão a que lemos do arquivo; senão 5s.
+async function soundLength(item, sound) {
+  try {
+    const clip = ppro.ClipProjectItem.cast(item);
+    const media = await clip.getMedia();
+    const d = media && media.getDuration ? (await media.getDuration()) : null;
+    if (d && d.seconds > 0) return d.seconds;
+  } catch (e) { /* tenta o próximo */ }
+  if (sound.duration > 0) return sound.duration;
+  return 5;
+}
+
+// A faixa está livre entre start e end (segundos)?
+async function trackIsFree(track, start, end) {
+  const CLIP = ppro.Constants && ppro.Constants.TrackItemType ? ppro.Constants.TrackItemType.CLIP : 1;
+  const items = (await track.getTrackItems(CLIP, false)) || [];
+  for (const it of items) {
+    const a = (await it.getStartTime()).seconds;
+    const b = (await it.getEndTime()).seconds;
+    if (a < end - 0.001 && b > start + 0.001) return false; // se sobrepõe
+  }
+  return true;
+}
+
+// Procura, a partir da faixa escolhida e descendo na timeline (A3, A4, A5…),
+// a primeira faixa sem nenhum clipe no trecho. Se todas estiverem ocupadas, cria uma faixa nova.
+async function findFreeAudioTrack(sequence, firstIdx, start, end) {
+  const count = await sequence.getAudioTrackCount();
+  for (let i = Math.max(0, firstIdx); i < count; i++) {
+    const track = await sequence.getAudioTrack(i);
+    if (track && await trackIsFree(track, start, end)) return { index: i, isNew: false };
+  }
+  return { index: Math.max(count, firstIdx), isNew: true };
+}
+
 let busy = false;
 async function placeSound(sound, row) {
   if (busy) { status("Aguarde: ainda colocando o som anterior…"); return; }
@@ -683,9 +720,8 @@ async function placeSound(sound, row) {
     // Não deixa um preview "travado" impedir a inserção.
     await Promise.race([stopPreview(), new Promise(r => setTimeout(r, 1500))]);
     const trackNumber = parseInt(document.getElementById("track").value, 10) || DEFAULT_TRACK;
-    const audioIdx = trackNumber - 1;          // A1 = índice 0 (confirmado no teste da Fase 0)
     const videoIdx = 0;
-    const mode = document.getElementById("mode").value;
+    const mode = document.getElementById("mode").value; // auto | overwrite | insert
 
     step = "abrir projeto";
     const project = await ppro.Project.getActiveProject();
@@ -698,21 +734,36 @@ async function placeSound(sound, row) {
     const item = await getOrImportItem(project, sound);
     step = "ler playhead";
     const time = await sequence.getPlayerPosition();
+
+    // Faixa: índice começa em 0 (A1 = 0), confirmado no teste da Fase 0.
+    let audioIdx = trackNumber - 1;
+    let newTrack = false;
+    if (mode === "auto") {
+      step = "procurar faixa livre";
+      const len = await soundLength(item, sound);
+      const found = await findFreeAudioTrack(sequence, audioIdx, time.seconds, time.seconds + len);
+      audioIdx = found.index;
+      newTrack = found.isNew;
+    }
+
     step = "preparar edição";
     const editor = ppro.SequenceEditor.getEditor(sequence);
 
     step = "aplicar na timeline";
     let success = false;
     project.lockedAccess(() => {
-      const action = mode === "insert"
-        ? editor.createInsertProjectItemAction(item, time, videoIdx, audioIdx, false)
+      // Faixa nova: usa "insert" (a API documenta que cria a faixa se o índice não existir),
+      // com limitShift = true para não empurrar nada nas outras faixas.
+      const action = mode === "insert" || newTrack
+        ? editor.createInsertProjectItemAction(item, time, videoIdx, audioIdx, mode !== "insert")
         : editor.createOverwriteItemAction(item, time, videoIdx, audioIdx);
       success = project.executeTransaction((compound) => {
         compound.addAction(action);
       }, "Sound Library: " + stripExt(sound.name));
     });
 
-    if (success) status(`✅ "${stripExt(sound.name)}" em A${trackNumber} · ${time.seconds.toFixed(2)}s`, "ok");
+    const where = `A${audioIdx + 1}${newTrack ? " (faixa nova)" : ""}`;
+    if (success) status(`✅ "${stripExt(sound.name)}" em ${where} · ${time.seconds.toFixed(2)}s`, "ok");
     else status("O Premiere não aplicou a ação.", "err");
   } catch (e) {
     // Se o item em cache ficou inválido (ex.: removido do projeto), tenta de novo na próxima.
