@@ -3,42 +3,110 @@
 <head>
   <meta charset="utf-8" />
   <style>
-    body { font-family: sans-serif; font-size: 12px; color: #ddd; background: #232323; padding: 10px; }
-    h2 { font-size: 14px; margin: 0 0 10px; }
-    .row { margin-bottom: 10px; }
-    label { display: block; margin-bottom: 4px; color: #aaa; }
-    #file { word-break: break-all; color: #fff; }
-    #log { white-space: pre-wrap; background: #111; padding: 8px; border-radius: 4px; min-height: 120px; font-family: monospace; font-size: 11px; }
-    .ok { color: #7c7; } .err { color: #e77; }
+    * { box-sizing: border-box; }
+    /* Layout compacto: uma linha de topo, uma de busca; o resto é a lista (que rola). */
+    html, body { height: 100%; }
+    body { font-family: sans-serif; font-size: 12px; color: #e8e8ea; background: #141416; margin: 0; padding: 6px 8px;
+           display: flex; flex-direction: column; overflow: hidden; }
+    #top, #settings, #bar, #status { flex-shrink: 0; }
+
+    /* topo: [‹] Título  nº sons ............ ⚙ */
+    #top { display: flex; flex-direction: row; align-items: center; margin-bottom: 6px; }
+    #nav { flex-shrink: 0; }
+    .back { width: 22px; height: 22px; border-radius: 6px; background: #2a2a30; color: #ddd; text-align: center; line-height: 22px; font-size: 13px; cursor: pointer; margin-right: 8px; }
+    .back:hover { background: #7c5cff; color: #fff; }
+    #title { flex-grow: 1; display: flex; flex-direction: row; align-items: center; overflow: hidden; }
+    #title .big { font-size: 15px; font-weight: bold; color: #fff; margin-right: 8px; white-space: nowrap; }
+    #title .count { color: #888; font-size: 11px; white-space: nowrap; }
+    .iconbtn { width: 22px; height: 22px; border-radius: 11px; background: #222226; color: #bbb; text-align: center; line-height: 22px; font-size: 12px; cursor: pointer; flex-shrink: 0; }
+    .iconbtn:hover, .iconbtn.on { background: #7c5cff; color: #fff; }
+
+    /* configurações (escondidas por padrão) */
+    #settings { background: #1c1c20; border-radius: 10px; padding: 6px 8px; margin-bottom: 6px; }
+    #settings.hidden { display: none; }
+    .row { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; }
+    .row > * { margin: 2px 6px 2px 0; }
+    .pill { padding: 3px 10px; border-radius: 12px; background: #2a2a30; color: #ddd; cursor: pointer; font-size: 11px; }
+    .pill:hover { background: #34343c; }
+    .pill.primary { background: #7c5cff; color: #fff; }
+    #libPath { color: #777; font-size: 10px; word-break: break-all; margin-top: 4px; }
+    label { color: #999; font-size: 11px; }
+    select { background: #111; color: #fff; border: 1px solid #333; border-radius: 6px; }
+
+    /* busca + filtros numa linha */
+    #bar { display: flex; flex-direction: row; align-items: center; margin-bottom: 6px; }
+    #search { flex-grow: 1; padding: 5px 10px; background: #111114; color: #fff; border: 1px solid #2c2c33; border-radius: 8px; font-size: 12px; }
+    #filters { display: flex; flex-direction: row; flex-shrink: 0; }
+    .filter { color: #777; font-size: 11px; margin-left: 10px; cursor: pointer; }
+    .filter.on { color: #fff; font-weight: bold; }
+
+    /* lista (rola) */
+    #content { flex-grow: 1; min-height: 0; overflow-y: scroll; padding-right: 2px; }
+    #content::-webkit-scrollbar { width: 6px; }
+    #content::-webkit-scrollbar-thumb { background: #3a3a42; border-radius: 3px; }
+    .grid { display: flex; flex-direction: row; flex-wrap: wrap; }
+
+    /* cards de categoria */
+    .card { background: #24242a; border-radius: 10px; padding: 8px 10px; margin: 0 1% 6px 0; cursor: pointer; }
+    .card:hover { background: #2d2d35; }
+    .card .cname { font-weight: bold; color: #fff; font-size: 12px; }
+    .card .ccount { color: #888; font-size: 10px; margin-top: 1px; }
+    .card.fav { background: #2b2540; }
+
+    /* sons */
+    .item { display: flex; flex-direction: row; align-items: center; background: #24242a; border-radius: 10px; padding: 5px 6px; margin: 0 1% 5px 0; cursor: pointer; }
+    .item:hover { background: #2b2b32; }
+    .item.busy { opacity: 0.5; }
+    .play { width: 24px; height: 24px; border-radius: 7px; background: #121215; color: #ddd; text-align: center; line-height: 24px; font-size: 9px; margin-right: 8px; flex-shrink: 0; }
+    .play.playing { background: #7c5cff; color: #fff; }
+    .info { flex-grow: 1; overflow: hidden; }
+    .info .name { font-weight: bold; color: #fff; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .info .meta { color: #888; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .star { width: 22px; height: 24px; line-height: 24px; text-align: center; color: #666; font-size: 14px; flex-shrink: 0; cursor: pointer; }
+    .star:hover { color: #f5c542; }
+    .star.on { color: #f5c542; }
+    .star.fixed { opacity: 0.6; }
+    .section { width: 100%; color: #999; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; margin: 2px 0 6px; }
+    .gainbox { display: flex; flex-direction: row; align-items: center; margin-right: 6px; flex-shrink: 0; }
+    .gainbox span { font-size: 11px; margin-right: 3px; }
+    .add { width: 24px; height: 24px; border-radius: 7px; background: #34343c; color: #fff; text-align: center; line-height: 24px; font-size: 15px; flex-shrink: 0; margin-left: 6px; }
+    .add:hover { background: #7c5cff; }
+    .empty { color: #888; padding: 14px 4px; text-align: center; width: 100%; }
+
+    #status { color: #888; font-size: 10px; margin-top: 4px; min-height: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #status.ok { color: #8fd18f; } #status.err { color: #ee7a7a; white-space: normal; }
   </style>
 </head>
 <body>
-  <h2>Sound Library · Teste (Fase 0)</h2>
-
-  <div class="row">
-    <sp-button id="btnPick">1. Escolher arquivo de áudio</sp-button>
-    <div id="file">(nenhum arquivo)</div>
+  <div id="top">
+    <div id="nav"></div>
+    <div id="title"></div>
+    <div class="gainbox" title="Volume aplicado ao som inserido"><span>🔊</span><select id="gain"></select></div>
+    <div class="iconbtn" id="btnSettings" title="Configurações (pasta, faixa, modo)">⚙</div>
   </div>
 
-  <div class="row">
-    <label>Índice da faixa de áudio (teste 0, 1, 2…)</label>
-    <sp-textfield id="audioTrack" value="2"></sp-textfield>
+  <div id="settings" class="hidden">
+    <div class="row">
+      <div class="pill primary" id="btnFolder">Escolher pasta</div>
+      <div class="pill" id="btnRefresh">Atualizar</div>
+      <label>Modo:</label>
+      <select id="mode">
+        <option value="auto">Faixa livre (automático)</option>
+        <option value="overwrite">Sempre na faixa (sobrescreve)</option>
+        <option value="insert">Sempre na faixa (empurra clipes)</option>
+      </select>
+      <label>a partir de:</label>
+      <select id="track"></select>
+    </div>
+    <div id="libPath">Nenhuma pasta escolhida.</div>
   </div>
 
-  <div class="row">
-    <label>Índice da faixa de vídeo (usado pela API; teste 0)</label>
-    <sp-textfield id="videoTrack" value="0"></sp-textfield>
+  <div id="bar">
+    <input id="search" type="text" placeholder="Buscar sons…" />
+    <div id="filters"></div>
   </div>
-
-  <div class="row">
-    <sp-button id="btnOverwrite">2a. Inserir no playhead (sobrescrever)</sp-button>
-  </div>
-  <div class="row">
-    <sp-button id="btnInsert" variant="secondary">2b. Inserir no playhead (empurrar clipes)</sp-button>
-  </div>
-
-  <label>Log (copie e me mande se der erro):</label>
-  <div id="log"></div>
+  <div id="content"></div>
+  <div id="status"></div>
 
   <script src="main.js"></script>
 </body>

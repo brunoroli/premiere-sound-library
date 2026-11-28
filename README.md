@@ -1,34 +1,48 @@
-# Premiere Sound Library
+# Pilzinha Sounds
 
-Painel (plugin UXP) para o Adobe Premiere Pro: biblioteca de músicas e efeitos sonoros com categorias, e clique para colocar direto na timeline.
+Pilzinha Sounds — painel (plugin UXP) para o Adobe Premiere Pro: biblioteca de músicas e efeitos sonoros com categorias, e clique para colocar direto na timeline.
 
-## Status: Fase 0 (prova de conceito)
+## Status: Fase 1 (biblioteca no painel)
 
-Um painel de teste que:
-1. deixa você escolher um arquivo de áudio;
-2. importa esse arquivo no projeto (se ainda não estiver);
-3. coloca na timeline, na posição do playhead, na faixa escolhida.
+- **Fase 0 ✅** — testado no Mac: importa e coloca o áudio no playhead. Índices de faixa começam em 0 (A1 = 0).
+- **Fase 1** — o painel agora:
+  1. pede a pasta da biblioteca (ex.: "Sounds fx" no Google Drive) e tenta lembrar dela nas próximas aberturas;
+  2. lista todos os sons (.wav, .mp3, .aif, .m4a…), ignorando `.DS_Store` e arquivos de cache do Premiere (`.cfa`, `.pek`);
+  3. cria uma aba por pasta onde os sons estão (categoria) — funciona mesmo escolhendo uma pasta acima, como "SFX e Trilhas" — e a aba **⭐ Favoritos** para pastas com "Preferidos"/"Favoritos" no nome;
+  4. tem busca por nome;
+  5. **clique no som → vai para a timeline no playhead**, na faixa escolhida (A1…A8, padrão A3), sobrescrevendo ou empurrando clipes.
 
-O objetivo é confirmar que a API do Premiere faz isso de forma confiável no **Mac e no Windows** antes de construir o resto.
+- **Fase 2 ✅** — botão **▶** em cada som para ouvir antes (preview); ■ para parar. Clicar no **nome** continua colocando na timeline.
+  - O preview toca no **Source Monitor** (testado e funcionando com MP3 e WAV). A tentativa de tocar dentro do painel (`<video>` com `file://`/`data:`) ficou **desligada** (`PANEL_PREVIEW = false` no `main.js`): no Premiere, com WAV, ela parecia tocar mas ficava muda.
+
+### Painel fixado / plugin some ao reabrir o Premiere
+Plugins carregados pela **UXP Developer Tool** são temporários: ao fechar o Premiere, eles são descarregados, e o painel some do layout. Para o painel ficar instalado de vez:
+1. Na UXP Developer Tool, nos **"..."** do plugin → **Package** → salve o arquivo `.ccx`.
+2. Dê dois cliques no `.ccx` (o Creative Cloud instala o plugin).
+3. Remova o plugin da UXP Developer Tool para não ficar duplicado.
+4. Abra o painel pelo menu **Window** do Premiere e fixe na aba desejada.
+
+- **Visual novo (0.4)** — tela inicial "Biblioteca" com cards por categoria (⭐ Favoritos, Todos e cada pasta); ao abrir uma categoria: título grande, busca, filtro **Curto / Médio / Longo** (≤1s, ≤3s, >3s) e cards de som com **▶ (ouvir)**, nome, **duração** e botão **+ (colocar na timeline)**. Clicar no card também toca o preview. Pasta, faixa e modo ficam nas configurações (⚙).
+- **Layout compacto (0.5)** — uma linha de topo (voltar, título, nº de sons, ⚙) e uma linha com busca + filtros; todo o resto é a lista, que rola. Em painéis largos a lista vira **grade com várias colunas**. As configurações fecham sozinhas depois de escolher a pasta.
+  - A duração é lida do arquivo (WAV exato; MP3 estimado) em segundo plano e guardada em cache. Outros formatos ficam sem duração.
+
+- **Faixa livre automática (0.6)** — modo padrão "Faixa livre (automático)": antes de colocar o som, o painel olha as faixas de áudio a partir da faixa escolhida (padrão A3) e usa a primeira **sem nenhum clipe no trecho** do playhead até o fim do som (A3 → A4 → A5…). Se todas estiverem ocupadas, cria uma faixa nova. Os modos antigos continuam disponíveis: "Sempre na faixa (sobrescreve)" e "Sempre na faixa (empurra clipes)".
+
+- **Favoritos, recentes e volume (0.7)**
+  - **☆/★ em cada som** para favoritar direto no painel (sem mover arquivos). Sons da pasta "Preferidos" continuam favoritos (★ fixa).
+  - **Recentes:** a tela inicial mostra "Usados recentemente" no topo e há um card 🕘 Recentes com os últimos 30.
+  - Favoritos e recentes ficam no arquivo oculto **`.soundlibrary.json`** dentro da pasta da biblioteca (sincroniza pelo Drive entre Mac e Windows; caminhos relativos). Há uma cópia local de segurança no painel.
+  - **🔊 Volume (dB)** no topo (−18 a +6 dB): depois de inserir, o painel ajusta o "Level" do efeito Volume do clipe. Em 0 dB não mexe em nada.
+
+### Requisito: Google Drive
+O plugin lê os arquivos do disco. No Google Drive para computador, marque a pasta da biblioteca como **"Disponível off-line"**.
 
 ## Como testar
 
-1. Instale a **UXP Developer Tool** pelo app Creative Cloud.
-2. Abra o Premiere com um projeto e uma sequência aberta na timeline.
-3. Na UXP Developer Tool: **Add Plugin** → selecione o arquivo `plugin/manifest.json`.
-4. Clique em **Load** (ou nos "..." → Load). O painel deve aparecer no Premiere (se não aparecer, procure no menu **Window / Janela → UXP Plugins**, ou similar).
-5. No painel:
-   - **1. Escolher arquivo de áudio**
-   - Deixe as faixas como estão (áudio 2, vídeo 0) para o primeiro teste
-   - Clique em **2a. Inserir no playhead (sobrescrever)**
-6. Veja em qual faixa o áudio entrou. Os índices de faixa podem começar em 0 ou em 1 (a documentação não deixa claro), por isso o campo é editável.
-
-### O que me mandar depois do teste
-- Funcionou? Em qual faixa o áudio apareceu (A1, A2, A3…)?
-- O botão **2b** (empurrar clipes) também funcionou?
-- Alguma coisa foi parar numa faixa de vídeo?
-- Se deu erro: o texto do **Log** do painel (print ou copiado).
-- Repita no outro computador (Mac/Windows).
+1. Na UXP Developer Tool, use **Load** (ou **Reload**, se já estava carregado) no plugin Pilzinha Sounds.
+2. No painel, clique em **Escolher pasta** e selecione a pasta "Sounds fx" (no Mac, fica em algo como `~/Library/CloudStorage/GoogleDrive-…/Meu Drive/Sounds fx`).
+3. Navegue pelas abas, teste a busca e clique num som com o playhead posicionado.
+4. Feche e reabra o Premiere: o painel deve lembrar a pasta (se não lembrar, me avise).
 
 ## Estrutura
 
@@ -36,16 +50,16 @@ O objetivo é confirmar que a API do Premiere faz isso de forma confiável no **
 plugin/
   manifest.json   configuração do plugin (nome, permissões, versão mínima do Premiere)
   index.html      interface do painel
-  main.js         lógica: escolher arquivo, importar, colocar na timeline
+  main.js         lógica: ler a pasta, abas/busca, importar e colocar na timeline
 ```
 
 ## Roteiro
 
 | Fase | Entrega |
 |---|---|
-| 0 | Teste: importar e colocar no playhead |
-| 1 | Escolher pasta da biblioteca (Google Drive) e listar os áudios |
-| 2 | Preview com play/pause |
+| 0 ✅ | Teste: importar e colocar no playhead |
+| 1 🔄 | Escolher pasta, categorias por subpasta, favoritos, busca, clique para inserir |
+| 2 🔄 | Preview com play/stop (via Source Monitor) |
 | 3 | Categorias, tags e busca (salvas na pasta do Drive, caminhos relativos) |
 | 4 | Clique para inserir com faixa configurável (música / SFX) |
 | 5 | Favoritos, recentes, atalhos, inserir só um trecho |
