@@ -569,7 +569,23 @@ async function previewInMonitor(sound) {
   if (typeof sm.setPosition === "function" && ppro.TickTime) {
     try { await sm.setPosition(ppro.TickTime.createWithSeconds(0)); } catch (e) { /* opcional */ }
   }
-  await sm.play(1);
+
+  // Logo depois de abrir, o Source Monitor ainda pode estar carregando o arquivo e
+  // ignorar o play. Então: dá play, confere se a posição andou; se não, tenta de novo.
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const position = async () => {
+    try { const t = await sm.getPosition(); return t ? t.seconds : null; } catch (e) { return null; }
+  };
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const before = await position();
+    await sm.play(1);
+    await sleep(250);
+    const after = await position();
+    if (before === null || after === null) return;   // não dá para conferir: confia no play
+    if (after > before + 0.01) return;               // está tocando
+    if (previewingPath && previewingPath !== sound.path) return; // usuário já trocou de som
+    await sleep(150 + attempt * 100);                // espera o arquivo terminar de carregar
+  }
 }
 
 async function stopPreview() {
