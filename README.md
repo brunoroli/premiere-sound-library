@@ -1,6 +1,6 @@
-# Pilzinha Sounds
+# BRN Sound Effects
 
-Pilzinha Sounds — painel (plugin UXP) para o Adobe Premiere Pro: biblioteca de músicas e efeitos sonoros com categorias, e clique para colocar direto na timeline.
+BRN Sound Effects — painel (plugin UXP) para o Adobe Premiere Pro: biblioteca de músicas e efeitos sonoros com categorias, e clique para colocar direto na timeline.
 
 ## Status: Fase 1 (biblioteca no painel)
 
@@ -39,7 +39,7 @@ O plugin lê os arquivos do disco. No Google Drive para computador, marque a pas
 
 ## Como testar
 
-1. Na UXP Developer Tool, use **Load** (ou **Reload**, se já estava carregado) no plugin Pilzinha Sounds.
+1. Na UXP Developer Tool, use **Load** (ou **Reload**, se já estava carregado) no plugin BRN Sound Effects.
 2. No painel, clique em **Escolher pasta** e selecione a pasta "Sounds fx" (no Mac, fica em algo como `~/Library/CloudStorage/GoogleDrive-…/Meu Drive/Sounds fx`).
 3. Navegue pelas abas, teste a busca e clique num som com o playhead posicionado.
 4. Feche e reabra o Premiere: o painel deve lembrar a pasta (se não lembrar, me avise).

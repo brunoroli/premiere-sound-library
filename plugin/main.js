@@ -1,4 +1,4 @@
-// Pilzinha Sounds
+// BRN Sound Effects
 // Biblioteca dos seus sons (pasta local / Google Drive): categorias por pasta,
 // favoritos, busca, duração, preview e "+" para colocar na timeline no playhead.
 
@@ -905,7 +905,7 @@ async function applyGain(project, sequence, trackIdx, startSec, db) {
     actions.push(level.createSetValueAction(level.createKeyframe(target), true));
     ok = project.executeTransaction((compound) => {
       for (const a of actions) compound.addAction(a);
-    }, `Pilzinha Sounds: volume ${db > 0 ? "+" : ""}${db} dB`);
+    }, `BRN Sound Effects: volume ${db > 0 ? "+" : ""}${db} dB`);
   });
   if (!ok) throw new Error("o Premiere não aplicou o volume");
 }
@@ -963,7 +963,7 @@ async function placeSound(sound, row) {
         : editor.createOverwriteItemAction(item, time, videoIdx, audioIdx);
       success = project.executeTransaction((compound) => {
         compound.addAction(action);
-      }, "Pilzinha Sounds: " + stripExt(sound.name));
+      }, "BRN Sound Effects: " + stripExt(sound.name));
     });
 
     const where = `A${audioIdx + 1}${newTrack ? " (faixa nova)" : ""}`;

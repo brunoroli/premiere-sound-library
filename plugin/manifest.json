@@ -1,8 +1,8 @@
 {
   "manifestVersion": 5,
   "id": "com.brunoroli.soundlibrary",
-  "name": "Pilzinha Sounds",
-  "version": "0.7.1",
+  "name": "BRN Sound Effects",
+  "version": "0.7.2",
   "main": "index.html",
   "host": {
     "app": "premierepro",
@@ -12,7 +12,7 @@
     {
       "type": "panel",
       "id": "soundLibraryPanel",
-      "label": { "default": "Pilzinha Sounds" },
+      "label": { "default": "BRN Sound Effects" },
       "minimumSize": { "width": 260, "height": 300 },
       "preferredDockedSize": { "width": 320, "height": 500 },
       "preferredFloatingSize": { "width": 320, "height": 500 }
