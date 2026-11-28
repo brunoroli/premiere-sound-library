@@ -481,6 +481,7 @@ function sourceMonitor() {
 //   "data"  → lê o arquivo e usa src = data:audio/...;base64,...
 // Se nenhum tocar, cai no Source Monitor ("monitor"), que já sabemos que funciona.
 // O método que funcionar fica salvo para as próximas vezes.
+const PANEL_PREVIEW = false; // experimental: tentar tocar dentro do painel antes do Source Monitor
 let previewMethod = null;    // "file" | "data" | "monitor"
 let previewingVia = null;
 
@@ -600,7 +601,11 @@ async function togglePreview(sound) {
   if (wasThis) { status(""); return; }
 
   // Começa pelo método que funcionou da última vez; se falhar, tenta os outros.
-  const order = [previewMethod, "file", "data", "monitor"].filter((m, i, a) => m && a.indexOf(m) === i);
+  // O preview dentro do painel ("file"/"data") foi desligado: no Premiere, com WAV, o player do
+  // painel parecia tocar mas ficava mudo. Ligue PANEL_PREVIEW para testar de novo no futuro.
+  const order = PANEL_PREVIEW
+    ? [previewMethod, "file", "data", "monitor"].filter((m, i, a) => m && a.indexOf(m) === i)
+    : ["monitor"];
   const problems = [];
   for (const method of order) {
     try {
