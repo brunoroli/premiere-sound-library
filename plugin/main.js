@@ -353,11 +353,19 @@ function renderRows(box, items) {
 
     const addBtn = el("div", "add", "+");
     addBtn.title = "Colocar na timeline (playhead)";
-    addBtn.addEventListener("click", (ev) => { ev.stopPropagation(); placeSound(s, row); });
+    addBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      ev.__handledByAdd = true;
+      placeSound(s, row);
+    });
     row.appendChild(addBtn);
 
     // clicar no card (ou no ▶) = ouvir; o "+" coloca na timeline
-    row.addEventListener("click", () => togglePreview(s));
+    row.addEventListener("click", (ev) => {
+      // Se o clique foi no "+", não toca o preview (caso o stopPropagation não funcione no UXP).
+      if (ev && (ev.__handledByAdd || ev.target === addBtn)) return;
+      togglePreview(s);
+    });
     box.appendChild(row);
   }
 }
@@ -626,25 +634,35 @@ async function getOrImportItem(project, sound) {
 
 let busy = false;
 async function placeSound(sound, row) {
-  if (busy) return;
+  if (busy) { status("Aguarde: ainda colocando o som anterior…"); return; }
   busy = true;
   row.classList.add("busy");
+  let step = "início";
   try {
-    await stopPreview();
+    status(`Colocando "${stripExt(sound.name)}" na timeline…`);
+    step = "parar preview";
+    // Não deixa um preview "travado" impedir a inserção.
+    await Promise.race([stopPreview(), new Promise(r => setTimeout(r, 1500))]);
     const trackNumber = parseInt(document.getElementById("track").value, 10) || DEFAULT_TRACK;
     const audioIdx = trackNumber - 1;          // A1 = índice 0 (confirmado no teste da Fase 0)
     const videoIdx = 0;
     const mode = document.getElementById("mode").value;
 
+    step = "abrir projeto";
     const project = await ppro.Project.getActiveProject();
     if (!project) throw new Error("Nenhum projeto aberto.");
+    step = "achar sequência";
     const sequence = await project.getActiveSequence();
     if (!sequence) throw new Error("Abra uma sequência na timeline.");
 
+    step = "importar arquivo";
     const item = await getOrImportItem(project, sound);
+    step = "ler playhead";
     const time = await sequence.getPlayerPosition();
+    step = "preparar edição";
     const editor = ppro.SequenceEditor.getEditor(sequence);
 
+    step = "aplicar na timeline";
     let success = false;
     project.lockedAccess(() => {
       const action = mode === "insert"
@@ -660,7 +678,7 @@ async function placeSound(sound, row) {
   } catch (e) {
     // Se o item em cache ficou inválido (ex.: removido do projeto), tenta de novo na próxima.
     importedItems.delete(sound.path);
-    status(`Erro: ${e.message || e}`, "err");
+    status(`Erro (${step}): ${e.message || e}`, "err");
   } finally {
     row.classList.remove("busy");
     busy = false;
