@@ -104,6 +104,10 @@ async function chooseFolder() {
       console.warn("Não foi possível salvar o token da pasta:", e);
     }
     await loadLibrary();
+    // pasta escolhida: fecha as configurações para sobrar espaço para a lista
+    document.getElementById("settings").classList.add("hidden");
+    document.getElementById("btnSettings").classList.remove("on");
+    fitContent();
   } catch (e) {
     status(`Erro ao escolher pasta: ${e.message || e}`, "err");
   }
@@ -285,20 +289,16 @@ function go(v) {
 function renderNav() {
   const nav = document.getElementById("nav");
   nav.innerHTML = "";
-  nav.className = "";
-  if (view === "home") { nav.className = ""; return; }
-  nav.className = "nav";
+  if (view === "home") return;
   const back = el("div", "back", "‹");
   back.title = "Voltar para a biblioteca";
   back.addEventListener("click", () => go("home"));
   nav.appendChild(back);
-  nav.appendChild(el("div", "crumb", "Biblioteca"));
 }
 
 function renderTitle() {
   const t = document.getElementById("title");
   t.innerHTML = "";
-  t.className = "title";
   const searching = query.trim().length > 0;
   const label = view === "home" ? (searching ? "Resultados" : "Biblioteca") : viewLabel(view);
   t.appendChild(el("div", "big", (view === VIEW_FAV ? "⭐ " : "") + label));
@@ -309,7 +309,6 @@ function renderTitle() {
 function renderFilters() {
   const f = document.getElementById("filters");
   f.innerHTML = "";
-  f.className = "filters";
   if (view === "home" && !query.trim()) return;
   for (const [id, label] of [["short", "Curto"], ["medium", "Médio"], ["long", "Longo"]]) {
     const b = el("div", "filter" + (durFilter === id ? " on" : ""), label);
@@ -318,10 +317,22 @@ function renderFilters() {
   }
 }
 
+// Quantas colunas cabem na largura do painel (painel largo = grade com várias colunas).
+let columns = 1;
+function computeColumns(minWidth) {
+  try {
+    const w = document.getElementById("content").clientWidth || window.innerWidth;
+    return Math.max(1, Math.floor(w / minWidth));
+  } catch (e) { return 1; }
+}
+function colWidth(cols) { return (Math.floor(1000 / cols) / 10 - 1) + "%"; }
+
 function renderCards(box) {
-  const cards = el("div", "cards");
+  const cards = el("div", "grid");
+  const cols = Math.max(2, computeColumns(150));
   const add = (id, name, count, extra) => {
     const c = el("div", "card" + (extra ? " " + extra : ""));
+    c.style.width = colWidth(cols);
     c.appendChild(el("div", "cname", name));
     c.appendChild(el("div", "ccount", nSons(count)));
     c.addEventListener("click", () => go(id));
@@ -336,8 +347,12 @@ function renderCards(box) {
 
 function renderRows(box, items) {
   if (!items.length) { box.appendChild(el("div", "empty", "Nenhum som encontrado.")); return; }
+  const grid = el("div", "grid");
+  box.appendChild(grid);
+  columns = computeColumns(260);
   for (const s of items) {
     const row = el("div", "item");
+    row.style.width = colWidth(columns);
     row.title = s.path;
 
     const playing = previewingPath === s.path;
@@ -366,7 +381,7 @@ function renderRows(box, items) {
       if (ev && (ev.__handledByAdd || ev.target === addBtn)) return;
       togglePreview(s);
     });
-    box.appendChild(row);
+    grid.appendChild(row);
   }
 }
 
@@ -401,9 +416,12 @@ function fitContent() {
     const content = document.getElementById("content");
     const statusEl = document.getElementById("status");
     const top = content.getBoundingClientRect().top;
-    const reserved = (statusEl ? statusEl.offsetHeight : 14) + 34; // status + espaçamentos
-    const h = Math.max(120, Math.floor(window.innerHeight - top - reserved));
+    const reserved = (statusEl ? statusEl.offsetHeight : 13) + 16; // status + espaçamentos
+    const h = Math.max(60, Math.floor(window.innerHeight - top - reserved));
     content.style.height = h + "px";
+    // Se a largura mudou o nº de colunas, redesenha a lista.
+    const showingRows = !(view === "home" && !query.trim());
+    if (showingRows && computeColumns(260) !== columns) renderContent();
   } catch (e) { /* o CSS cuida */ }
 }
 try { window.addEventListener("resize", fitContent); } catch (e) { /* ignora */ }

@@ -23,6 +23,7 @@ Plugins carregados pela **UXP Developer Tool** são temporários: ao fechar o Pr
 4. Abra o painel pelo menu **Window** do Premiere e fixe na aba desejada.
 
 - **Visual novo (0.4)** — tela inicial "Biblioteca" com cards por categoria (⭐ Favoritos, Todos e cada pasta); ao abrir uma categoria: título grande, busca, filtro **Curto / Médio / Longo** (≤1s, ≤3s, >3s) e cards de som com **▶ (ouvir)**, nome, **duração** e botão **+ (colocar na timeline)**. Clicar no card também toca o preview. Pasta, faixa e modo ficam nas configurações (⚙).
+- **Layout compacto (0.5)** — uma linha de topo (voltar, título, nº de sons, ⚙) e uma linha com busca + filtros; todo o resto é a lista, que rola. Em painéis largos a lista vira **grade com várias colunas**. As configurações fecham sozinhas depois de escolher a pasta.
   - A duração é lida do arquivo (WAV exato; MP3 estimado) em segundo plano e guardada em cache. Outros formatos ficam sem duração.
 
 ### Requisito: Google Drive
